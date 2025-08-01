@@ -1,0 +1,7 @@
+[Unit]
+Description=Disk usage watchdog
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/disk-watchdog/env.conf
+ExecStart=/usr/local/bin/disk-watchdog.sh

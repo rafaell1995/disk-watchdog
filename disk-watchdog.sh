@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Configurações via variáveis de ambiente (com fallback)
+THRESHOLD=${THRESHOLD:-85}
+RECOVER_MARGIN=${RECOVER_MARGIN:-5}
+DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+FLAGFILE=${FLAGFILE:-/var/run/disk_watchdog_alerted}
+LOGFILE=${LOGFILE:-/var/log/disk-watchdog.log}
+
+timestamp() { date "+%F %T"; }
+
+# Pega uso da partição raiz (/), em %
+USAGE=$(df -P / | awk 'NR==2 {gsub(/%/,""); print $5}')
+
+# Envia alerta para Discord (se configurado)
+send_alert() {
+    local msg="$1"
+    echo "$(timestamp): $msg" >> "$LOGFILE"
+
+    if [[ -n "$DISCORD_WEBHOOK_URL" ]]; then
+        payload=$(printf '{"content":"⚠️ **Alerta de disco:** %s"}' "$msg")
+        curl -s -X POST -H "Content-Type: application/json" --data "$payload" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1
+    else
+        echo "$(timestamp): Discord webhook não configurado; pulando envio." >> "$LOGFILE"
+    fi
+}
+
+# Lógica de disparo
+if (( USAGE >= THRESHOLD )); then
+    if [[ ! -f "$FLAGFILE" ]]; then
+        send_alert "Uso da partição / está em ${USAGE}%. Libere espaço antes de atingir 100%."
+        touch "$FLAGFILE"
+    else
+        echo "$(timestamp): já alertado (uso ${USAGE}%)." >> "$LOGFILE"
+    fi
+else
+    # se caiu abaixo do limiar de recuperação, reseta o estado de alerta
+    if (( USAGE < THRESHOLD - RECOVER_MARGIN )); then
+        [[ -f "$FLAGFILE" ]] && rm -f "$FLAGFILE"
+    fi
+        echo "$(timestamp): uso ${USAGE}%, abaixo do limite.">> "$LOGFILE"
+fi
