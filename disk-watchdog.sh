@@ -5,6 +5,9 @@ ENV_CONF_FILE="/etc/disk-watchdog/env.conf"
 if [[ -f "$ENV_CONF_FILE" ]]; then
   # shellcheck disable=SC1090
   source "$ENV_CONF_FILE"
+  # limpa possíveis carriage returns (ex: se editado com CRLF)
+  DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL//$'\r'/}
+  SERVER_NAME=${SERVER_NAME//$'\r'/}
 fi
 
 # Configurações via variáveis de ambiente (com fallback)
@@ -14,16 +17,26 @@ DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
 FLAGFILE=${FLAGFILE:-/var/run/disk_watchdog_alerted}
 LOGFILE=${LOGFILE:-/var/log/disk-watchdog.log}
 
-# Identificação do servidor
-# SERVER_NAME pode ser definido; se não, usa hostname
+# Identificação do servidor (override opcional)
 if [[ -n "${SERVER_NAME:-}" ]]; then
   SERVER_DISPLAY="$SERVER_NAME"
 else
-  # tenta FQDN, se falhar usa hostname simples
   SERVER_DISPLAY=$(hostname -f 2>/dev/null || hostname)
 fi
 
 timestamp() { date "+%F %T"; }
+
+# debug: loga configuração inicial (mas não imprime o webhook inteiro)
+if [[ "${DEBUG:-0}" == "1" ]]; then
+  masked_webhook=""
+  if [[ -n "$DISCORD_WEBHOOK_URL" ]]; then
+    # mostra apenas prefixo e comprimento
+    masked_webhook="${DISCORD_WEBHOOK_URL:0:30}... (len=${#DISCORD_WEBHOOK_URL})"
+  else
+    masked_webhook="(não configurado)"
+  fi
+  echo "$(timestamp): [debug] THRESHOLD=$THRESHOLD RECOVER_MARGIN=$RECOVER_MARGIN SERVER_DISPLAY=$SERVER_DISPLAY WEBHOOK=$masked_webhook" >> "$LOGFILE"
+fi
 
 # Pega uso da partição raiz (/), em %
 USAGE=$(df -P / | awk 'NR==2 {gsub(/%/,""); print $5}')
@@ -34,7 +47,6 @@ send_alert() {
     echo "$(timestamp): $msg" >> "$LOGFILE"
 
     if [[ -n "$DISCORD_WEBHOOK_URL" ]]; then
-        # compõe mensagem com identificação
         payload=$(printf '{"content":"⚠️ **Alerta de disco em %s:** %s"}' "$SERVER_DISPLAY" "$msg")
         curl -s -X POST -H "Content-Type: application/json" --data "$payload" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1
     else
@@ -51,7 +63,6 @@ if (( USAGE >= THRESHOLD )); then
         echo "$(timestamp): já alertado (uso ${USAGE}%)." >> "$LOGFILE"
     fi
 else
-    # se caiu abaixo do limiar de recuperação, reseta o estado de alerta
     if (( USAGE < THRESHOLD - RECOVER_MARGIN )); then
         [[ -f "$FLAGFILE" ]] && rm -f "$FLAGFILE"
     fi
