@@ -7,6 +7,15 @@ DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
 FLAGFILE=${FLAGFILE:-/var/run/disk_watchdog_alerted}
 LOGFILE=${LOGFILE:-/var/log/disk-watchdog.log}
 
+# Identificação do servidor
+# SERVER_NAME pode ser definido; se não, usa hostname
+if [[ -n "${SERVER_NAME:-}" ]]; then
+  SERVER_DISPLAY="$SERVER_NAME"
+else
+  # tenta FQDN, se falhar usa hostname simples
+  SERVER_DISPLAY=$(hostname -f 2>/dev/null || hostname)
+fi
+
 timestamp() { date "+%F %T"; }
 
 # Pega uso da partição raiz (/), em %
@@ -18,7 +27,8 @@ send_alert() {
     echo "$(timestamp): $msg" >> "$LOGFILE"
 
     if [[ -n "$DISCORD_WEBHOOK_URL" ]]; then
-        payload=$(printf '{"content":"⚠️ **Alerta de disco:** %s"}' "$msg")
+        # compõe mensagem com identificação
+        payload=$(printf '{"content":"⚠️ **Alerta de disco em %s:** %s"}' "$SERVER_DISPLAY" "$msg")
         curl -s -X POST -H "Content-Type: application/json" --data "$payload" "$DISCORD_WEBHOOK_URL" >/dev/null 2>&1
     else
         echo "$(timestamp): Discord webhook não configurado; pulando envio." >> "$LOGFILE"
@@ -38,5 +48,5 @@ else
     if (( USAGE < THRESHOLD - RECOVER_MARGIN )); then
         [[ -f "$FLAGFILE" ]] && rm -f "$FLAGFILE"
     fi
-        echo "$(timestamp): uso ${USAGE}%, abaixo do limite.">> "$LOGFILE"
+    echo "$(timestamp): uso ${USAGE}%, abaixo do limite." >> "$LOGFILE"
 fi
