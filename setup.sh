@@ -13,12 +13,12 @@ usage() {
 Uso: $0 [OPÇÕES]
 
 Opções:
---help Mostra essa ajuda.
---update-scripts Baixa/atualiza apenas o script e as unidades systemd, sem tocar em env.conf.
---reconfigure Reconfigura interativamente o env.conf (faz backup do anterior).
---force Atualiza tudo e força reconfiguração (equivalente a --update-scripts + --reconfigure).
+  --help             Mostra essa ajuda.
+  --update-scripts   Baixa/atualiza apenas o script e as unidades systemd, sem tocar em env.conf.
+  --reconfigure      Reconfigura interativamente o env.conf (faz backup do anterior).
+  --force            Atualiza tudo e força reconfiguração (equivalente a --update-scripts + --reconfigure).
 
-Sem opções, faz install padrão: atualiza scripts/unidades e interage para criar/env.conf (se já existir pergunta se mantém).
+Sem opções, faz install padrão: atualiza scripts/unidades e cria/env.conf interativamente se não existir (ou pergunta se mantém se já existir).
 EOF
 }
 
@@ -62,7 +62,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Check for systemctl
-if ! command -v systemctl>/dev/null; then
+if ! command -v systemctl >/dev/null; then
     echo "Erro: systemctl não encontrado. Precisa de um sistema com systemd."
     exit 1
 fi
@@ -93,8 +93,8 @@ if [[ "$DO_UPDATE_SCRIPTS" = true || "$FORCE" = true || ( "$DO_UPDATE_SCRIPTS" =
     download "$REPO_RAW/disk-watchdog.service" "$SERVICE_PATH"
     download "$REPO_RAW/disk-watchdog.timer" "$TIMER_PATH"
     echo " -> unidades systemd instaladas/atualizadas em:"
-    echo " $SERVICE_PATH"
-    echo " $TIMER_PATH"
+    echo "    $SERVICE_PATH"
+    echo "    $TIMER_PATH"
 else
     echo " -> pulando atualização de script/unidades (não solicitado)."
 fi
@@ -102,6 +102,12 @@ fi
 echo
 echo "==> Etapa 2: configuração do env.conf"
 mkdir -p "$ENV_DIR"
+
+# Se não existe, força reconfiguração para criar
+if [[ ! -f "$ENV_CONF" ]]; then
+    DO_RECONFIGURE=true
+fi
+
 if [[ -f "$ENV_CONF" && "$DO_RECONFIGURE" = false && "$FORCE" = false ]]; then
     read -rp "Arquivo de configuração já existe em $ENV_CONF. Deseja mantê-lo? [Y/n]: " keep
     keep=${keep:-Y}
@@ -129,7 +135,7 @@ if [[ "$DO_RECONFIGURE" = true || "$FORCE" = true ]]; then
 
     read -rp "Threshold de alerta em % (padrão 85): " threshold_input
     threshold=${threshold_input:-85}
-    while ! [[ "$threshold" =~ ^[0-9]+$ ]] || (( threshold <= 0 )) || (( threshold>= 100 )); do
+    while ! [[ "$threshold" =~ ^[0-9]+$ ]] || (( threshold <= 0 )) || (( threshold >= 100 )); do
         echo "Valor inválido. Digite um número entre 1 e 99."
         read -rp "Threshold de alerta em % (padrão 85): " threshold_input
         threshold=${threshold_input:-85}
@@ -137,7 +143,7 @@ if [[ "$DO_RECONFIGURE" = true || "$FORCE" = true ]]; then
 
     read -rp "Margem de recuperação em % (padrão 5): " margin_input
     recover_margin=${margin_input:-5}
-    while ! [[ "$recover_margin" =~ ^[0-9]+$ ]] || (( recover_margin < 0 )) || (( recover_margin>= threshold )); do
+    while ! [[ "$recover_margin" =~ ^[0-9]+$ ]] || (( recover_margin < 0 )) || (( recover_margin >= threshold )); do
         echo "Valor inválido. Deve ser >=0 e menor que threshold ($threshold)."
         read -rp "Margem de recuperação em % (padrão 5): " margin_input
         recover_margin=${margin_input:-5}
@@ -173,9 +179,9 @@ echo " - Serviço/unit/timer: disk-watchdog.timer"
 echo " - Configuração usada: $ENV_CONF"
 echo
 echo "Comandos úteis:"
-echo " Ver status do timer: sudo systemctl status disk-watchdog.timer"
-echo " Ver logs da execução: sudo journalctl -u disk-watchdog.service"
-echo " Forçar execução manual: sudo $SCRIPT_DEST"
+echo "  Ver status do timer: sudo systemctl status disk-watchdog.timer"
+echo "  Ver logs da execução: sudo journalctl -u disk-watchdog.service"
+echo "  Forçar execução manual: sudo $SCRIPT_DEST"
 echo
 echo "Se quiser reconfigurar só o env.conf mais tarde: sudo $0 --reconfigure"
 echo "Para atualizar script/unidades sem tocar config: sudo $0 --update-scripts"
