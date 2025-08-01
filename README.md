@@ -13,104 +13,69 @@ O script (`disk-watchdog.sh`) checa o uso da partição raiz e, quando ultrapass
 - `curl`
 - Permissões de root/sudo para colocar arquivos em `/usr/local/bin` e `/etc`, e para habilitar unidades systemd
 
-## Instalação no servidor
+## Instalação no servidor (via `setup.sh`)
 
-### 1. Copiar os arquivos para os locais corretos
+O jeito mais simples e seguro de instalar / atualizar é usar o `setup.sh`, que:
 
-Substitua `SEU_USUARIO`/`nome-do-repo` se for diferente; os exemplos abaixo assumem que os arquivos estão em `https://github.com/rafaell1995/disk-watchdog`:
+- Baixa/atualiza o script e as unidades systemd.
+- Cria ou reconfigura o arquivo seguro `/etc/disk-watchdog/env.conf` (com webhook, thresholds e nome do servidor).
+- Habilita e inicia o timer.
 
-```bash
-# Script principal
-sudo curl -fsSL https://raw.githubusercontent.com/rafaell1995/disk-watchdog/main/disk-watchdog.sh -o /usr/local/bin/disk-watchdog.sh
-```
-
-```bash
-# Unidades systemd
-sudo curl -fsSL https://raw.githubusercontent.com/rafaell1995/disk-watchdog/main/disk-watchdog.service -o /etc/systemd/system/disk-watchdog.service
-sudo curl -fsSL https://raw.githubusercontent.com/rafaell1995/disk-watchdog/main/disk-watchdog.timer -o /etc/systemd/system/disk-watchdog.timer
-```
-
-Ou, se preferir wget:
+### 1. Baixar o `setup.sh` e torná-lo executável
 
 ```bash
-sudo wget -qO /usr/local/bin/disk-watchdog.sh https://raw.githubusercontent.com/rafaell1995/disk-watchdog/main/disk-watchdog.sh
-sudo wget -qO /etc/systemd/system/disk-watchdog.service https://raw.githubusercontent.com/rafaell1995/disk-watchdog/main/disk-watchdog.service
-sudo wget -qO /etc/systemd/system/disk-watchdog.timer https://raw.githubusercontent.com/rafaell1995/disk-watchdog/main/disk-watchdog.timer
+curl -fsSL https://raw.githubusercontent.com/rafaell1995/disk-watchdog/main/setup.sh -o setup.sh
+chmod +x setup.sh
 ```
 
-### 2. Preparar o script
+### 2. Rodar para instalação inicial
 
 ```bash
-sudo chmod +x /usr/local/bin/disk-watchdog.sh
-sudo chmod 755 /usr/local/bin/disk-watchdog.sh
+sudo ./setup.sh
 ```
 
-### 3. Criar o arquivo de configuração seguro (`/etc/disk-watchdog/env.conf`)
+Ele vai:
 
-O serviço lê variáveis de ambiente daquele arquivo. Ele deve conter pelo menos:
+- Baixar/atualizar `disk-watchdog.sh`, `disk-watchdog.service` e `disk-watchdog.timer`.
+- Pedir interativamente o webhook do Discord, threshold, margem de recuperação e nome do servidor.
+- Criar `/etc/disk-watchdog/env.conf` com permissões seguras.
+- Habilitar e iniciar o timer.
 
-- `DISCORD_WEBHOOK_URL`: a URL do webhook do Discord.
-- `THRESHOLD`: percentual de uso que aciona o alerta (padrão 85).
-- `RECOVER_MARGIN`: quanto precisa cair abaixo do threshold para resetar o alerta (padrão 5).
+### 3. Modos/flags úteis (reexecução segura)
 
-#### Opção interativa (recomendado):
-
-```bash
-read -rp "Discord webhook URL: " webhook
-read -rp "Threshold de alerta (em %, padrão 85): " threshold
-read -rp "Margem de recuperação (em %, padrão 5): " margin
-
-sudo mkdir -p /etc/disk-watchdog
-sudo bash -c "cat <<EOF > /etc/disk-watchdog/env.conf
-DISCORD_WEBHOOK_URL=\"$webhook\"
-THRESHOLD=${threshold:-85}
-RECOVER_MARGIN=${margin:-5}
-EOF"
-
-sudo chmod 600 /etc/disk-watchdog/env.conf
-```
-
-#### Ou criando manualmente (substitua pelos valores desejados):
-
-```bash
-sudo mkdir -p /etc/disk-watchdog
-sudo tee /etc/disk-watchdog/env.conf >/dev/null <<EOF
-DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/SEU_WEBHOOK_ID/SEU_TOKEN"
-THRESHOLD=85
-RECOVER_MARGIN=5
-EOF
-
-sudo chmod 600 /etc/disk-watchdog/env.conf
-```
-
-> ⚠️ **Importante:** Esse arquivo contém o webhook; mantenha permissões restritas (`600`) e **não** o versiona. Ele vive em `/etc/disk-watchdog/env.conf`.
-
-### 4. Habilitar e iniciar via systemd
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now disk-watchdog.timer
-```
-
-### 5. Verificação
-
-- Ver status do timer:
+- `--update-scripts`
+  Atualiza apenas o script e as unidades systemd, **sem** tocar em `env.conf`:
 
   ```bash
-  sudo systemctl status disk-watchdog.timer
+  sudo ./setup.sh --update-scripts
   ```
 
-- Logs da execução:
+- `--reconfigure`
+  Reconfigura interativamente **somente** o arquivo `env.conf` (faz backup do anterior):
 
   ```bash
-  sudo journalctl -u disk-watchdog.service
+  sudo ./setup.sh --reconfigure
   ```
 
-- Log customizado do script:
+- `--force`
+  Atualiza tudo e força reconfiguração do `env.conf` (equivalente a `--update-scripts --reconfigure`):
 
   ```bash
-  sudo tail -f /var/log/disk-watchdog.log
+  sudo ./setup.sh --force
   ```
+
+### 4. Verificação
+
+```bash
+# Verificar o status do timer
+sudo systemctl status disk-watchdog.timer
+
+# Ver logs da última execução
+sudo journalctl -u disk-watchdog.service
+
+# Ver log customizado
+sudo tail -f /var/log/disk-watchdog.log
+```
 
 ## Criando o webhook no Discord
 
