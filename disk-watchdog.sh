@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# fallback: carrega o env.conf se existir (útil para execução manual, além do systemd)
+ENV_CONF_FILE="/etc/disk-watchdog/env.conf"
+if [[ -f "$ENV_CONF_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_CONF_FILE"
+fi
+
 # Configurações via variáveis de ambiente (com fallback)
 THRESHOLD=${THRESHOLD:-85}
 RECOVER_MARGIN=${RECOVER_MARGIN:-5}
